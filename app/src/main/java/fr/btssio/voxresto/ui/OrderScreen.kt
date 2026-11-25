@@ -5,6 +5,15 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,7 +43,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -56,7 +64,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,6 +105,7 @@ fun OrderScreen(vm: OrderViewModel) {
     ) {
         TicketCard(
             draft = draft,
+            listening = ui.voiceState == VoiceState.LISTENING,
             onPlus = vm::increment,
             onMinus = vm::decrement,
             onConfirm = vm::confirm,
@@ -146,6 +154,7 @@ fun OrderScreen(vm: OrderViewModel) {
                 onValueChange = { text = it },
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Ou écrivez votre commande") },
+                shape = MaterialTheme.shapes.medium,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send() }),
@@ -165,86 +174,204 @@ private fun MicButton(ui: OrderUiState, onClick: () -> Unit) {
         targetValue = if (listening) 1f + ui.level * 0.35f else 1f,
         label = "mic-pulse",
     )
-    FilledIconButton(
-        onClick = onClick,
-        enabled = ui.speechAvailable && ui.voiceState != VoiceState.PROCESSING,
-        modifier = Modifier
-            .padding(start = 4.dp)
-            .size(60.dp)
-            .scale(scale),
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = if (listening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            contentColor = if (listening) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
-        ),
-    ) {
-        Icon(
-            imageVector = if (listening) Icons.Filled.Stop else Icons.Filled.Mic,
-            contentDescription = if (listening) "Arrêter l'écoute" else "Parler",
-            modifier = Modifier.size(28.dp),
-        )
+    // Halo qui bat doucement pendant l'écoute (anneaux de la maquette).
+    val halo by rememberInfiniteTransition(label = "mic-halo").animateFloat(
+        initialValue = 0.82f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(animation = tween(durationMillis = 1450), repeatMode = RepeatMode.Restart),
+        label = "mic-halo-scale",
+    )
+    Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+        if (listening) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .scale(halo)
+                    .alpha((1.25f - halo) * 2f)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), CircleShape),
+            )
+        }
+        FilledIconButton(
+            onClick = onClick,
+            enabled = ui.speechAvailable && ui.voiceState != VoiceState.PROCESSING,
+            modifier = Modifier
+                .size(60.dp)
+                .scale(scale),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = if (listening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                contentColor = if (listening) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            Icon(
+                imageVector = if (listening) Icons.Filled.Stop else Icons.Filled.Mic,
+                contentDescription = if (listening) "Arrêter l'écoute" else "Parler",
+                modifier = Modifier.size(28.dp),
+            )
+        }
     }
 }
 
 @Composable
 private fun TicketCard(
     draft: TicketWithDetails?,
+    listening: Boolean,
     onPlus: (Long) -> Unit,
     onMinus: (Long) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+    VoxCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Commande en cours", style = MaterialTheme.typography.titleMedium)
+            Overline("Nouveau ticket", color = MaterialTheme.colorScheme.primary)
+            Text("Commande en cours", style = MaterialTheme.typography.titleLarge)
             val lines = draft?.lines.orEmpty().sortedBy { it.id }
 
             if (lines.isEmpty()) {
-                Text(
-                    text = "Aucun article pour le moment.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                ) {
+                    Text(
+                        text = if (listening) "Je vous écoute…" else "Dictez la commande",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = if (listening) "Parlez clairement, puis marquez une courte pause."
+                        else "Par exemple : « Deux samoussas et un coca »",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
                 return@Column
             }
 
             Column(
                 modifier = Modifier
-                    .heightIn(max = 180.dp)
+                    .padding(top = 12.dp)
+                    .heightIn(max = 220.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                lines.forEach { line ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(line.name, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { line.menuItemId?.let(onMinus) }) {
-                            Icon(Icons.Filled.Remove, contentDescription = "Retirer un ${line.name}")
+                lines.forEachIndexed { index, line ->
+                    if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(line.name, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = "${Format.price(line.unitPriceCents)} l'unité",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        Text("${line.quantity}", fontWeight = FontWeight.Bold)
-                        IconButton(onClick = { line.menuItemId?.let(onPlus) }) {
-                            Icon(Icons.Filled.Add, contentDescription = "Ajouter un ${line.name}")
-                        }
+                        QuantityStepper(
+                            quantity = line.quantity,
+                            name = line.name,
+                            onMinus = { line.menuItemId?.let(onMinus) },
+                            onPlus = { line.menuItemId?.let(onPlus) },
+                        )
                         Text(
                             text = Format.price(line.unitPriceCents * line.quantity),
+                            style = MaterialTheme.typography.labelLarge,
                             textAlign = TextAlign.End,
-                            modifier = Modifier.width(76.dp),
+                            modifier = Modifier.width(72.dp),
                         )
                     }
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Row {
-                Text("Total", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text(Format.price(draft?.totalCents ?: 0), fontWeight = FontWeight.Bold)
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // Barre « Total à payer » sombre, comme sur la maquette.
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.inverseSurface,
+                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp),
             ) {
-                OutlinedButton(onClick = onCancel) { Text("Annuler") }
-                Button(onClick = onConfirm, modifier = Modifier.weight(1f)) { Text("Valider la commande") }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                ) {
+                    Text(
+                        text = "Total à payer",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .weight(1f)
+                            .alpha(0.7f),
+                    )
+                    Text(Format.price(draft?.totalCents ?: 0), style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            Text(
+                text = "Dites « valide la commande » ou utilisez le bouton.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Annuler") }
+                Button(
+                    onClick = onConfirm,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1.7f),
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("Valider le ticket", modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Sélecteur de quantité de la maquette : bouton − gris, nombre, bouton + rouge dans un cadre arrondi. */
+@Composable
+private fun QuantityStepper(quantity: Int, name: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.padding(horizontal = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onMinus, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Filled.Remove,
+                    contentDescription = "Retirer un $name",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                text = "$quantity",
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(24.dp),
+            )
+            IconButton(onClick = onPlus, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Ajouter un $name",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }

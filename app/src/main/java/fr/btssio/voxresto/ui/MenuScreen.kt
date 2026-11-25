@@ -1,6 +1,13 @@
 package fr.btssio.voxresto.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Restaurant
+import fr.btssio.voxresto.data.MenuItem
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,7 +20,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -41,30 +47,17 @@ fun MenuScreen(vm: MenuViewModel) {
         LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
             menu.groupBy { it.category }.forEach { (category, dishes) ->
                 item(key = "header-$category") {
-                    Text(
+                    Overline(
                         text = category,
-                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
                     )
                 }
                 items(dishes, key = { it.id }) { dish ->
-                    ListItem(
-                        modifier = Modifier.alpha(if (dish.available) 1f else 0.5f),
-                        headlineContent = { Text(dish.name) },
-                        supportingContent = {
-                            val aliases = dish.aliasList
-                            Text(
-                                Format.price(dish.priceCents) +
-                                    if (aliases.isEmpty()) "" else "  ·  aussi : ${aliases.joinToString(", ")}"
-                            )
-                        },
-                        trailingContent = {
-                            Switch(
-                                checked = dish.available,
-                                onCheckedChange = { vm.setAvailable(dish.id, it) },
-                            )
-                        },
+                    DishCard(
+                        dish = dish,
+                        onAvailableChange = { vm.setAvailable(dish.id, it) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
             }
@@ -74,6 +67,7 @@ fun MenuScreen(vm: MenuViewModel) {
             onClick = { showDialog = true },
             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
             text = { Text("Ajouter un plat") },
+            shape = MaterialTheme.shapes.large,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp),
@@ -87,6 +81,68 @@ fun MenuScreen(vm: MenuViewModel) {
                 vm.addItem(name, category, cents, aliases, done)
             },
         )
+    }
+}
+
+/** Carte d'un plat (maquette « La carte ») : pastille d'icône, nom, prix, synonymes vocaux, disponibilité. */
+@Composable
+private fun DishCard(dish: MenuItem, onAvailableChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    VoxCard(modifier = modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .padding(16.dp)
+                .alpha(if (dish.available) 1f else 0.6f),
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(scheme.primaryContainer, MaterialTheme.shapes.medium),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Restaurant,
+                    contentDescription = null,
+                    tint = scheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp)) {
+                Text(dish.name, style = MaterialTheme.typography.titleMedium)
+                val aliases = dish.aliasList
+                if (aliases.isNotEmpty()) {
+                    Text(
+                        text = "aussi : ${aliases.joinToString(", ")}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(if (dish.available) scheme.secondary else scheme.outline, CircleShape),
+                    )
+                    Text(
+                        text = if (dish.available) "Disponible" else "Indisponible",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (dish.available) scheme.secondary else scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(Format.price(dish.priceCents), style = MaterialTheme.typography.titleMedium)
+                Switch(
+                    checked = dish.available,
+                    onCheckedChange = onAvailableChange,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
     }
 }
 
@@ -113,6 +169,7 @@ private fun AddItemDialog(
                     value = name,
                     onValueChange = { name = it; error = null },
                     label = { Text("Nom") },
+                    shape = MaterialTheme.shapes.medium,
                     singleLine = true,
                     isError = error != null,
                     supportingText = error?.let { message -> @Composable { Text(message) } },
