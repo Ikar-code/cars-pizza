@@ -24,6 +24,22 @@ l'appli la comprend, remplit un ticket, répond à voix haute, puis conserve tou
 | Récapitulatif / prix | « c'est combien », « fais-moi le récapitulatif » |
 | Cas ambigu | « une pizza » → l'assistant demande : *Pizza Margherita ou Pizza Reine ?* |
 
+## Design
+
+L'interface reprend la maquette Figma **« Commande vocale pizzeria »** (restaurant fictif *Il Forno*), adaptée à Compose. Seul l'habillage vient de la maquette : la logique vocale, la base Room et les statuts (`DRAFT / CONFIRMED / READY / CANCELLED`) ne changent pas.
+
+| Élément de la maquette | Où dans le code |
+|---|---|
+| Palette : fond crème `#F7F5F0`, rouge four `#D8472C`, vert `#4B8A5B`, ambre `#AA6A11`, encre `#252823`, bordures `#DEDBD2` | `ui/Theme.kt` (le mode sombre est une déclinaison, il n'existe pas dans la maquette) |
+| Polices **Manrope** (titres) et **DM Sans** (texte), licence OFL | `res/font/`, `ui/Theme.kt` |
+| Cartes blanches à fine bordure, petits titres en capitales espacées, pastille de statut | `ui/Components.kt` (`VoxCard`, `Overline`, `StatusBadge`) |
+| En-tête : pastille rouge avec pizza + « Prise de commande » | `ui/VoxRestoUi.kt` |
+| Ticket en cours : sélecteur de quantité, barre « Total à payer » sombre, boutons Annuler / Valider, halo du micro pendant l'écoute | `ui/OrderScreen.kt` |
+| Carte du menu : pastille d'icône, prix, synonymes, point « Disponible » | `ui/MenuScreen.kt` |
+| Tickets : pastille de numéro, lignes avec quantité en rouge, pied « Total » avec actions, deux compteurs en tête | `ui/HistoryScreen.kt` |
+
+Non repris de la maquette : le **mode écoute mains libres** (kit micro, mots « Nouvelle commande » / « Valider » / « Corriger » prononcés sans toucher l'écran), qui demande une reconnaissance vocale continue ; la carte 100 % pizzas et ses statuts *En attente / En préparation / Terminée*.
+
 ## Architecture
 
 ```
