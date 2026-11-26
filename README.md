@@ -1,4 +1,4 @@
-# VoxResto — prise de commande vocale pour pizzeria
+# Cars Pizza — prise de commande vocale pour pizzeria
 
 Application Android native (Kotlin, Jetpack Compose) pour une pizzeria où **un seul employé** prépare les pizzas
 et prend les commandes. Il dicte la commande à voix haute, les mains libres : l'application crée un **ticket**,

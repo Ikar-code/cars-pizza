@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.VoxResto" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.CarsPizza" parent="android:Theme.Material.Light.NoActionBar">
         <!-- Fond crème de la maquette : évite un flash blanc au démarrage. -->
         <item name="android:windowBackground">#F7F5F0</item>
     </style>

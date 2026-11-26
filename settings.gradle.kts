@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VoxResto"
+rootProject.name = "cars-pizza"
 include(":app")

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "fr.btssio.voxresto"
+    namespace = "fr.btssio.carspizza"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "fr.btssio.voxresto"
+        applicationId = "fr.btssio.carspizza"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

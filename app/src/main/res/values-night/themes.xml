@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.VoxResto" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.CarsPizza" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">#1B1D19</item>
     </style>
 </resources>

@@ -20,11 +20,11 @@
     </queries>
 
     <application
-        android:name=".VoxRestoApp"
+        android:name=".CarsPizzaApp"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VoxResto">
+        android:theme="@style/Theme.CarsPizza">
         <activity
             android:name=".MainActivity"
             android:exported="true"
