@@ -2,7 +2,6 @@ package fr.btssio.voxresto.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,15 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -44,19 +40,30 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import fr.btssio.voxresto.data.InputSource
 import fr.btssio.voxresto.data.TicketStatus
 import fr.btssio.voxresto.data.TicketWithDetails
 
+private enum class OrdersFilter(val label: String) {
+    ACTIVE("En cours"),
+    HISTORY("Historique"),
+}
+
 @Composable
-fun HistoryScreen(vm: HistoryViewModel) {
-    val history by vm.history.collectAsStateWithLifecycle()
-    var filter by rememberSaveable { mutableStateOf<String?>(null) }
-    val shown = history.filter { filter == null || it.ticket.status.name == filter }
+fun OrdersScreen(vm: OrdersViewModel) {
+    val tickets by vm.tickets.collectAsStateWithLifecycle()
+    var filter by rememberSaveable { mutableStateOf(OrdersFilter.ACTIVE) }
     val scheme = MaterialTheme.colorScheme
 
+    val active = tickets.filter { it.ticket.status == TicketStatus.PENDING || it.ticket.status == TicketStatus.PREPARING }
+    // F6 : ordre d'arrivée pour les commandes à préparer ; F10 : les plus récentes d'abord dans l'historique.
+    val shown = when (filter) {
+        OrdersFilter.ACTIVE -> active
+        OrdersFilter.HISTORY -> tickets
+            .filter { it.ticket.status == TicketStatus.COMPLETED || it.ticket.status == TicketStatus.CANCELLED }
+            .sortedByDescending { it.ticket.createdAtMillis }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        // Deux compteurs en tête d'écran, comme « En attente / En préparation » sur la maquette.
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
@@ -64,48 +71,36 @@ fun HistoryScreen(vm: HistoryViewModel) {
                 .padding(start = 16.dp, end = 16.dp, top = 8.dp),
         ) {
             StatTile(
-                count = history.count { it.ticket.status == TicketStatus.CONFIRMED },
-                label = "En cours",
+                count = active.count { it.ticket.status == TicketStatus.PENDING },
+                label = "En attente",
                 icon = Icons.Filled.Schedule,
                 container = scheme.tertiaryContainer,
                 content = scheme.tertiary,
                 modifier = Modifier.weight(1f),
             )
             StatTile(
-                count = history.count { it.ticket.status == TicketStatus.READY },
-                label = "Prêts",
-                icon = Icons.Filled.Check,
-                container = scheme.secondaryContainer,
-                content = scheme.secondary,
+                count = active.count { it.ticket.status == TicketStatus.PREPARING },
+                label = "En préparation",
+                icon = Icons.Filled.LocalFireDepartment,
+                container = scheme.primaryContainer,
+                content = scheme.primary,
                 modifier = Modifier.weight(1f),
             )
         }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             val chipColors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = scheme.primaryContainer,
                 selectedLabelColor = scheme.onPrimaryContainer,
             )
-            FilterChip(
-                selected = filter == null,
-                onClick = { filter = null },
-                label = { Text("Tous") },
-                colors = chipColors,
-            )
-            listOf(
-                TicketStatus.CONFIRMED to "En cours",
-                TicketStatus.READY to "Prêts",
-                TicketStatus.CANCELLED to "Annulés",
-            ).forEach { (status, label) ->
+            OrdersFilter.entries.forEach { option ->
                 FilterChip(
-                    selected = filter == status.name,
-                    onClick = { filter = status.name },
-                    label = { Text(label) },
+                    selected = filter == option,
+                    onClick = { filter = option },
+                    label = { Text(option.label) },
                     colors = chipColors,
                 )
             }
@@ -114,8 +109,8 @@ fun HistoryScreen(vm: HistoryViewModel) {
         if (shown.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "Aucune commande pour le moment.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = if (filter == OrdersFilter.ACTIVE) "Aucune commande à préparer." else "Aucune commande terminée.",
+                    color = scheme.onSurfaceVariant,
                 )
             }
         } else {
@@ -124,9 +119,9 @@ fun HistoryScreen(vm: HistoryViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(shown, key = { it.ticket.id }) { details ->
-                    TicketHistoryCard(
+                    TicketCard(
                         details = details,
-                        onReady = { vm.markReady(details.ticket.id) },
+                        onAdvance = { vm.advance(details.ticket.id) },
                         onCancel = { vm.cancel(details.ticket.id) },
                     )
                 }
@@ -165,20 +160,18 @@ private fun StatTile(
 }
 
 @Composable
-private fun TicketHistoryCard(details: TicketWithDetails, onReady: () -> Unit, onCancel: () -> Unit) {
+private fun TicketCard(details: TicketWithDetails, onAdvance: () -> Unit, onCancel: () -> Unit) {
     val ticket = details.ticket
     val scheme = MaterialTheme.colorScheme
     var expanded by rememberSaveable(ticket.id) { mutableStateOf(false) }
     val (statusContainer, statusContent) = statusColors(ticket.status)
-    val active = ticket.status == TicketStatus.CONFIRMED
+    val active = ticket.status == TicketStatus.PENDING || ticket.status == TicketStatus.PREPARING
 
     VoxCard(
         onClick = { expanded = !expanded },
         modifier = Modifier.fillMaxWidth(),
-        // Les tickets en cours ont un liseré rouge, comme « En préparation » sur la maquette.
-        borderColor = if (active) scheme.primary.copy(alpha = 0.35f) else scheme.outlineVariant,
+        borderColor = if (ticket.status == TicketStatus.PREPARING) scheme.primary.copy(alpha = 0.35f) else scheme.outlineVariant,
     ) {
-        // En-tête : pastille de numéro, titre, statut.
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -186,14 +179,10 @@ private fun TicketHistoryCard(details: TicketWithDetails, onReady: () -> Unit, o
                     .size(44.dp)
                     .background(statusContainer, MaterialTheme.shapes.medium),
             ) {
-                if (ticket.status == TicketStatus.READY) {
+                if (ticket.status == TicketStatus.COMPLETED) {
                     Icon(Icons.Filled.Check, contentDescription = null, tint = statusContent)
                 } else {
-                    Text(
-                        text = ticket.number?.let { "#$it" } ?: "…",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = statusContent,
-                    )
+                    Text("#${ticket.shortNumber}", style = MaterialTheme.typography.titleSmall, color = statusContent)
                 }
             }
             Column(
@@ -201,12 +190,9 @@ private fun TicketHistoryCard(details: TicketWithDetails, onReady: () -> Unit, o
                     .weight(1f)
                     .padding(horizontal = 12.dp),
             ) {
+                Text("Ticket n°${ticket.shortNumber}", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = ticket.number?.let { "Ticket n°$it" } ?: "Commande non validée",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = "${Format.dateTime(ticket.confirmedAt ?: ticket.createdAt)} · ${details.itemCount} article(s)",
+                    text = "${Format.dateTime(ticket.createdAtMillis)} · ${details.itemCount} pizza(s)",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )
@@ -215,26 +201,25 @@ private fun TicketHistoryCard(details: TicketWithDetails, onReady: () -> Unit, o
         }
         HorizontalDivider(color = scheme.outlineVariant)
 
-        // Lignes du ticket : quantité en rouge, nom, montant.
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.padding(16.dp),
         ) {
-            details.lines.sortedBy { it.id }.forEach { line ->
+            details.items.forEach { item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "${line.quantity}×",
+                        text = "${item.quantity}×",
                         style = MaterialTheme.typography.labelLarge,
                         color = scheme.primary,
                         modifier = Modifier.width(32.dp),
                     )
                     Text(
-                        text = line.name,
+                        text = item.pizzaName,
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = Format.price(line.unitPriceCents * line.quantity),
+                        text = Format.price(item.subtotalCents),
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                     )
@@ -242,12 +227,11 @@ private fun TicketHistoryCard(details: TicketWithDetails, onReady: () -> Unit, o
             }
         }
 
-        // Pied de carte : total et, pour un ticket en cours, les actions.
         Surface(color = scheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Overline("Total", modifier = Modifier.weight(1f))
-                    Text(Format.price(details.totalCents), style = MaterialTheme.typography.titleLarge)
+                    Text(Format.price(ticket.totalCents), style = MaterialTheme.typography.titleLarge)
                 }
                 if (active) {
                     Row(
@@ -257,47 +241,32 @@ private fun TicketHistoryCard(details: TicketWithDetails, onReady: () -> Unit, o
                             .fillMaxWidth()
                             .padding(top = 8.dp),
                     ) {
-                        TextButton(onClick = onCancel) { Text("Annuler le ticket") }
-                        Button(
-                            onClick = onReady,
-                            shape = MaterialTheme.shapes.medium,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = scheme.secondary,
-                                contentColor = scheme.onSecondary,
-                            ),
-                        ) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Text("Marquer prêt", modifier = Modifier.padding(start = 6.dp))
+                        TextButton(onClick = onCancel) { Text("Annuler") }
+                        val preparing = ticket.status == TicketStatus.PREPARING
+                        Button(onClick = onAdvance, shape = MaterialTheme.shapes.medium) {
+                            Icon(
+                                imageVector = if (preparing) Icons.Filled.Check else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(if (preparing) "Terminée" else "Commencer", modifier = Modifier.padding(start = 6.dp))
                         }
                     }
                 }
             }
         }
 
-        // Journal d'audit : visible en touchant la carte.
+        // Historique des changements d'état (table ticket_status_history) : visible en touchant la carte.
         AnimatedVisibility(visible = expanded) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Overline("Journal")
-                details.events.sortedWith(compareBy({ it.timestamp }, { it.id })).forEach { event ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                Overline("Historique")
+                details.history.forEach { change ->
+                    Text(
+                        text = "${Format.time(change.changedAtMillis)}  " +
+                            (change.oldStatus?.let { "${it.label()} → " } ?: "") + change.newStatus.label(),
+                        style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp),
-                    ) {
-                        Icon(
-                            imageVector = when (event.source) {
-                                InputSource.VOICE -> Icons.Filled.Mic
-                                InputSource.TEXT -> Icons.Filled.Keyboard
-                                InputSource.TOUCH -> Icons.Filled.TouchApp
-                            },
-                            contentDescription = event.source.name,
-                            tint = scheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Text(
-                            text = "  ${Format.time(event.timestamp)}  ${event.detail}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
+                    )
                 }
             }
         }

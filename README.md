@@ -1,122 +1,104 @@
-# VoxResto — prise de commande vocale pour restaurant
+# VoxResto — prise de commande vocale pour pizzeria
 
-Application Android native (Kotlin, Jetpack Compose) : le serveur **dicte la commande à voix haute**,
-l'appli la comprend, remplit un ticket, répond à voix haute, puis conserve tout dans un **historique**.
+Application Android native (Kotlin, Jetpack Compose) pour une pizzeria où **un seul employé** prépare les pizzas
+et prend les commandes. Il dicte la commande à voix haute, les mains libres : l'application crée un **ticket**,
+il le **valide** (ou le corrige / l'annule), puis le ticket rejoint la **liste des commandes à préparer**.
 
-> « Deux samoussas et un coca, c'est tout. » → 2 × Samoussa + 1 × Coca ajoutés, ticket n°1 validé, total annoncé.
+> « Deux margherita et une reine, c'est tout. » → 2 × Margherita + 1 × Reine, ticket validé, total annoncé.
 
-## Fonctionnalités
+Documents du projet : [`docs/cahier-des-charges.md`](docs/cahier-des-charges.md) (v1.0, novembre 2026) et
+[`docs/schema.sql`](docs/schema.sql) (schéma SQLite).
 
-| Écran | Ce qu'il fait |
+## Fonctionnalités (cahier des charges §6)
+
+| Réf. | Fonctionnalité | Où |
+|---|---|---|
+| F1 | Commande vocale : bouton micro, dictée → texte | **Gemini 3.8 Live** (`voice/GeminiLiveClient.kt`), repli sur la reconnaissance Android |
+| F2 | Micro externe (USB / filaire) s'il est branché, sinon micro de l'appareil | `voice/AudioCapture.kt` (`MicSelector`) |
+| F3 | Analyse de la commande : pizzas du menu + quantités | outils Gemini (`voice/OrderTools.kt`) + `voice/CommandParser.kt` |
+| F4 | Création du ticket : numéro, date/heure, lignes, total | `data/OrderRepository.kt` |
+| F5 | Validation : relire, valider, corriger (+/−) ou annuler avant enregistrement | écran **Commande** |
+| F6 | Liste des commandes, triée par ordre d'arrivée | écran **Commandes** → « En cours » |
+| F7 | Suivi de l'état : en attente → en préparation → terminée | écran **Commandes** |
+| F8 | Saisie manuelle si la voix échoue (champ texte + « Ajouter à la main ») | écran **Commande** |
+| F9 | Gestion du menu : ajout, modification, suppression, prix, disponibilité | écran **Menu** |
+| F10 | Historique des commandes terminées (et annulées) | écran **Commandes** → « Historique » |
+
+### Cycle de vie d'un ticket (§7)
+
+1. L'employé appuie sur le micro et dicte → 2. transcription + reconnaissance des pizzas et quantités →
+3. la commande en cours s'affiche pour relecture → 4. il valide, corrige ou annule →
+5. à la validation, le ticket est **enregistré en base** (`PENDING`) et ajouté à la liste →
+6. `PENDING` → `PREPARING` → `COMPLETED` (ou `CANCELLED`).
+
+La commande en cours de dictée vit **en mémoire** ; rien n'est écrit en base tant qu'elle n'est pas validée.
+La validation écrit en **une seule transaction** le ticket, ses lignes et la première ligne d'historique :
+une commande validée n'est jamais perdue ni à moitié enregistrée (§9, fiabilité).
+
+## Voix : Gemini 3.8 Live
+
+```
+micro (PCM 16 kHz) ──▶ WebSocket Gemini Live ──▶ appels d'outils ──▶ OrderViewModel ──▶ OrderRepository (SQLite)
+                         ▲        │                add_pizzas / remove_pizzas / read_order /
+   voix du modèle (24 kHz) ◀──────┘                validate_order / cancel_order
+```
+
+- Le modèle (`gemini-3.8-live`) comprend la phrase et répond à voix haute, en phrases très courtes.
+- **Il ne modifie jamais le ticket lui-même** : il appelle des outils. C'est l'application qui rapproche le nom dit
+  du menu en base (`CommandParser.resolve`, tolérant aux erreurs de reconnaissance), applique la modification et
+  renvoie le résultat (pizza inconnue, ambiguë, indisponible, total, numéro de ticket…). Les prix et le total
+  viennent donc toujours de la base, jamais du modèle.
+- Le menu disponible (noms, prix) est envoyé au modèle au début de chaque session.
+- Le micro est coupé automatiquement après 3 minutes sans voix.
+- **Repli** : sans clé API, sans réseau ou avec Gemini désactivé, l'application utilise la reconnaissance vocale
+  d'Android + `CommandParser`. Le champ texte et « Ajouter à la main » fonctionnent toujours.
+
+### Clé API Gemini
+
+Saisir la clé dans l'application (icône ⚙ de l'écran **Commande**). Elle est stockée **sur l'appareil uniquement**
+et n'est jamais dans le code ni dans le dépôt.
+
+> Pour la version 1 (appareil unique de la pizzeria), la clé est utilisée directement par l'application. Si
+> l'application était diffusée plus largement, il faudrait passer par un petit serveur intermédiaire ou des
+> jetons éphémères pour ne pas exposer la clé.
+
+## Base de données (SQLite)
+
+Le schéma de [`docs/schema.sql`](docs/schema.sql) est exécuté **tel quel** à la création de la base
+(`app/src/main/assets/db/schema.sql`), suivi du menu de départ (`assets/db/seed.sql`, 8 pizzas modifiables).
+
+| Table | Rôle |
 |---|---|
-| **Commande** | Micro (reconnaissance vocale française) ou saisie clavier, ticket en cours en direct, boutons +/−, validation/annulation, réponses de l'assistant à voix haute (coupables) |
-| **Menu** | Carte en base de données groupée par catégorie, plat disponible / indisponible (interrupteur), ajout d'un plat avec ses **synonymes vocaux** |
-| **Historique** | Tickets validés/annulés, filtre par statut, détail des lignes, **journal d'audit** (heure, action, origine voix / clavier / tactile), passage « Prêt » ou « Annulé » |
+| `pizza` | Menu : nom, description, prix (centimes), temps de préparation, disponibilité |
+| `ticket` | Commande : numéro (`AAAAMMJJ-NNN`, repart à 001 chaque jour), date, état, total |
+| `ticket_item` | Lignes d'un ticket. Nom et prix unitaire **copiés** : modifier le menu ne réécrit pas les anciens tickets |
+| `ticket_status_history` | Chaque changement d'état (affiché en touchant un ticket). Table indépendante, sans clé étrangère |
+| `ingredient`, `pizza_ingredient`, `stock_movement` | Stock : présentes dans le schéma, **pas encore utilisées par l'application** (hors périmètre v1) |
 
-### Commandes vocales comprises
+Points d'attention :
 
-| Intention | Exemples |
-|---|---|
-| Ajouter | « une pizza margherita », « je voudrais deux samoussas et un coca », « 3 bonbons piment » |
-| Retirer | « enlève le coca », « retire un samoussa » |
-| Valider | « valide la commande », « c'est tout » (utilisable dans la même phrase que l'ajout) |
-| Annuler | « annule la commande », « recommence » |
-| Récapitulatif / prix | « c'est combien », « fais-moi le récapitulatif » |
-| Cas ambigu | « une pizza » → l'assistant demande : *Pizza Margherita ou Pizza Reine ?* |
-
-## Design
-
-L'interface reprend la maquette Figma **« Commande vocale pizzeria »** (restaurant fictif *Il Forno*), adaptée à Compose. Seul l'habillage vient de la maquette : la logique vocale, la base Room et les statuts (`DRAFT / CONFIRMED / READY / CANCELLED`) ne changent pas.
-
-| Élément de la maquette | Où dans le code |
-|---|---|
-| Palette : fond crème `#F7F5F0`, rouge four `#D8472C`, vert `#4B8A5B`, ambre `#AA6A11`, encre `#252823`, bordures `#DEDBD2` | `ui/Theme.kt` (le mode sombre est une déclinaison, il n'existe pas dans la maquette) |
-| Polices **Manrope** (titres) et **DM Sans** (texte), licence OFL | `res/font/`, `ui/Theme.kt` |
-| Cartes blanches à fine bordure, petits titres en capitales espacées, pastille de statut | `ui/Components.kt` (`VoxCard`, `Overline`, `StatusBadge`) |
-| En-tête : pastille rouge avec pizza + « Prise de commande » | `ui/VoxRestoUi.kt` |
-| Ticket en cours : sélecteur de quantité, barre « Total à payer » sombre, boutons Annuler / Valider, halo du micro pendant l'écoute | `ui/OrderScreen.kt` |
-| Carte du menu : pastille d'icône, prix, synonymes, point « Disponible » | `ui/MenuScreen.kt` |
-| Tickets : pastille de numéro, lignes avec quantité en rouge, pied « Total » avec actions, deux compteurs en tête | `ui/HistoryScreen.kt` |
-
-Non repris de la maquette : le **mode écoute mains libres** (kit micro, mots « Nouvelle commande » / « Valider » / « Corriger » prononcés sans toucher l'écran), qui demande une reconnaissance vocale continue ; la carte 100 % pizzas et ses statuts *En attente / En préparation / Terminée*.
+- Prix en **centimes** (entiers) : aucune erreur d'arrondi.
+- Clés étrangères activées à l'ouverture (`setForeignKeyConstraintsEnabled`) : le `PRAGMA` du script est sans effet
+  dans la transaction de création, il est donc ignoré à l'exécution.
+- Supprimer une pizza du menu met `ticket_item.pizza_id` à `NULL` sans toucher aux anciens tickets.
 
 ## Architecture
 
-```
-┌────────────┐   micro    ┌───────────────┐  phrases   ┌───────────────┐
-│ SpeechMgr  │ ─────────▶ │ OrderViewModel│ ─────────▶ │ CommandParser │  (Kotlin pur, testé)
-│ (STT fr-FR)│            │               │ ◀───────── │  → VoiceCmd   │
-└────────────┘            │               │  commandes └───────────────┘
-┌────────────┐  réponses  │               │
-│ SpeechOut  │ ◀───────── │               │ ───────────▶ OrderRepository ──▶ Room (SQLite)
-│ (TTS fr-FR)│            └───────┬───────┘               (transactions)      menu · tickets · lignes · événements
-└────────────┘                    │ StateFlow
-                          Jetpack Compose (Commande · Menu · Historique)
-```
-
-- **MVVM** : écrans Compose → ViewModels → Repository → Room.
-- **`CommandParser`** n'a aucune dépendance Android : il est testable en JVM pur (`CommandParserTest`).
-- **Transactions** : ajouter une ligne + écrire l'événement + mettre à jour le ticket se fait en un bloc « tout ou rien ».
-- **Flux réactifs** : l'interface observe la BDD (`Flow`), elle se met à jour toute seule.
-
-## Base de données (Room / SQLite)
-
-```
-menu_items            tickets                    ticket_lines                 ticket_events
-──────────            ───────                    ────────────                 ─────────────
-id (PK)               id (PK)                    id (PK)                      id (PK)
-name (unique)         number (n° du jour)        ticket_id  (FK → tickets)    ticket_id (FK → tickets)
-category              status (DRAFT|CONFIRMED    menu_item_id (FK → menu_items,  timestamp
-price_cents            |READY|CANCELLED)          SET NULL)                   type (CREATED|ITEM_ADDED|…)
-aliases (synonymes)   created_at / updated_at    name  (copie du nom)         detail
-available             confirmed_at               unit_price_cents (copie)     source (VOICE|TEXT|TOUCH)
-                                                 quantity
-```
-
-Choix à expliquer à l'oral :
-
-- **Prix en centimes (entier)** : aucune erreur d'arrondi sur les montants.
-- **Nom et prix copiés dans la ligne** : modifier la carte ne réécrit pas l'historique.
-- **`ticket_events`** : journal d'audit, base de l'écran Historique ; il garde l'origine de chaque action.
-- **Un seul ticket `DRAFT`** à la fois = la commande en cours de dictée ; la validation lui attribue un numéro, remis à 1 chaque jour.
-- **Cycle de vie** : `DRAFT → CONFIRMED → READY`, ou `→ CANCELLED` ; les transitions interdites sont refusées par le Repository.
-- Le schéma exporté par Room est généré dans `app/schemas/` au premier build (utile pour le dossier : MLD/MCD).
-
-## Comment fonctionne la compréhension vocale
-
-1. Android `SpeechRecognizer` renvoie jusqu'à 3 hypothèses de texte (français).
-2. `CommandParser` normalise (minuscules, sans accents, sans ponctuation), repère les ordres globaux (valider, annuler, récapitulatif), découpe sur « et / puis », lit la quantité (chiffres ou « deux », « trois »…).
-3. Chaque morceau est rapproché de la carte (noms + synonymes) avec une **distance de Levenshtein tolérante** : « pizza margarita » ou « samoussas » sont compris malgré l'erreur de reconnaissance.
-4. `parseBest` garde l'hypothèse la mieux comprise (le plus de commandes valides, le moins d'inconnues).
+- **MVVM** : écrans Compose → ViewModels → `OrderRepository` → `PizzeriaDatabase` (SQLite via `SQLiteOpenHelper`).
+- `CommandParser` n'a aucune dépendance Android : testé en JVM pur (`CommandParserTest`, 20 tests).
+- Flux réactifs : les listes se relisent après chaque écriture.
+- Dépendances ajoutées : OkHttp (WebSocket). Room n'est plus utilisé : le schéma fourni est la référence.
 
 ## Lancer le projet
 
-1. Ouvrir le dossier dans **Android Studio** (version récente), laisser Gradle se synchroniser.
-2. Lancer sur un **téléphone réel** (recommandé : micro et moteur vocal fiables) ou un émulateur avec *Google Play* (activer le micro dans les réglages de l'émulateur).
-3. Autoriser le micro au premier appui. La reconnaissance vocale de Google peut nécessiter du réseau selon l'appareil ; le champ de saisie sert de plan B.
-4. Tests : `./gradlew test` (tests du parseur).
+1. Ouvrir le dossier dans **Android Studio**, laisser Gradle se synchroniser (JDK 17, SDK Android 35).
+2. Lancer sur un **téléphone réel** (micro) ; autoriser le micro au premier appui.
+3. Saisir la clé Gemini via l'icône ⚙ pour activer Gemini Live (Internet requis).
+4. Tests : `./gradlew test`.
 
-Prérequis : JDK 17, SDK Android 35. Si Android Studio propose de mettre à jour AGP/Kotlin/dépendances, vous pouvez accepter.
+## Limites connues (v1)
 
-## Script de démonstration (3 minutes)
-
-1. Écran **Menu** : montrer la carte, passer « Dodo » indisponible, ajouter un plat avec un synonyme.
-2. Écran **Commande** : dire « deux samoussas et un coca » → le ticket se remplit et l'assistant répond.
-3. Dire « enlève le coca » puis « une pizza » (cas ambigu) puis « une pizza reine ».
-4. Dire « c'est combien » puis « c'est tout » → ticket n°1 validé.
-5. Écran **Historique** : ouvrir le ticket, montrer le journal (icône micro = action vocale), le passer en « Prêt ».
-6. Montrer le test unitaire du parseur qui passe.
-
-## Pistes d'amélioration (pour la conclusion du dossier)
-
-- Reconnaissance **hors ligne** (modèles Vosk / Whisper embarqués) pour ne dépendre d'aucun réseau.
-- **Mot d'activation** (« Hey Vox ») pour mains libres complètement.
-- Synchronisation des tickets vers une cuisine (API REST + base MySQL/Supabase, écran cuisine).
-- Modificateurs (« sans piment », « bien cuit »), tables, paiement, statistiques de ventes.
-- Tests instrumentés Room et tests d'interface Compose.
-
-## Limites connues
-
-- Une seule langue (français) et une seule commande vocale à la fois.
-- Les nombres composés (« vingt et un ») ne sont pas gérés ; les quantités vont de 1 à 99 en chiffres ou jusqu'à « vingt » en lettres.
-- L'icône de l'application est celle par défaut (à remplacer via *Image Asset* dans Android Studio).
+- Gemini Live demande une connexion Internet. Hors ligne, c'est la reconnaissance Android (hors ligne selon l'appareil).
+- Micro externe : USB et casque filaire ; le Bluetooth n'est pas géré.
+- Pas d'encaissement, de synchronisation, d'impression de tickets ni de gestion de stock (hors périmètre v1).
+- À valider sur appareil réel : qualité de la reconnaissance en cuisine (bruit) et annulation d'écho voix du modèle / micro.

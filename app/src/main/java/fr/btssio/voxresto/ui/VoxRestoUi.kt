@@ -1,7 +1,7 @@
 package fr.btssio.voxresto.ui
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,8 +37,8 @@ import androidx.navigation.compose.rememberNavController
 
 private enum class Tab(val route: String, val title: String, val icon: ImageVector) {
     Order("order", "Commande", Icons.Filled.Mic),
+    Orders("orders", "Commandes", Icons.Filled.Receipt),
     Menu("menu", "Menu", Icons.Filled.RestaurantMenu),
-    History("history", "Historique", Icons.Filled.History),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,7 +47,7 @@ fun VoxRestoUi() {
     // ViewModels rattachés à l'activité : l'écoute et l'état survivent aux changements d'onglet.
     val orderVm: OrderViewModel = viewModel()
     val menuVm: MenuViewModel = viewModel()
-    val historyVm: HistoryViewModel = viewModel()
+    val ordersVm: OrdersViewModel = viewModel()
 
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -88,8 +88,8 @@ fun VoxRestoUi() {
             modifier = Modifier.padding(padding),
         ) {
             composable(Tab.Order.route) { OrderScreen(orderVm) }
+            composable(Tab.Orders.route) { OrdersScreen(ordersVm) }
             composable(Tab.Menu.route) { MenuScreen(menuVm) }
-            composable(Tab.History.route) { HistoryScreen(historyVm) }
         }
     }
 }

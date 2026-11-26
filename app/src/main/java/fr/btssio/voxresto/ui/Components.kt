@@ -18,21 +18,21 @@ import androidx.compose.ui.unit.sp
 import fr.btssio.voxresto.data.TicketStatus
 
 fun TicketStatus.label(): String = when (this) {
-    TicketStatus.DRAFT -> "Brouillon"
-    TicketStatus.CONFIRMED -> "En cours"
-    TicketStatus.READY -> "Prêt"
-    TicketStatus.CANCELLED -> "Annulé"
+    TicketStatus.PENDING -> "En attente"
+    TicketStatus.PREPARING -> "En préparation"
+    TicketStatus.COMPLETED -> "Terminée"
+    TicketStatus.CANCELLED -> "Annulée"
 }
 
-/** Couleurs (fond, texte) d'un statut : ambre = en cours, vert = prêt, rouge = annulé, comme sur la maquette. */
+/** Couleurs (fond, texte) : ambre = en attente, rouge pâle = en préparation, vert = terminée, gris = annulée. */
 @Composable
 fun statusColors(status: TicketStatus): Pair<Color, Color> {
     val scheme = MaterialTheme.colorScheme
     return when (status) {
-        TicketStatus.CONFIRMED -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        TicketStatus.READY -> scheme.secondaryContainer to scheme.onSecondaryContainer
+        TicketStatus.PENDING -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        TicketStatus.PREPARING -> scheme.primaryContainer to scheme.onPrimaryContainer
+        TicketStatus.COMPLETED -> scheme.secondaryContainer to scheme.onSecondaryContainer
         TicketStatus.CANCELLED -> scheme.errorContainer to scheme.onErrorContainer
-        TicketStatus.DRAFT -> scheme.surfaceVariant to scheme.onSurfaceVariant
     }
 }
 

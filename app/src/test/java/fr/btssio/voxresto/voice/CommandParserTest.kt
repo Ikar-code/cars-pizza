@@ -13,75 +13,75 @@ import org.junit.Test
 
 class CommandParserTest {
 
+    // Menu de départ de la pizzeria (assets/db/seed.sql), sans le mot « pizza » dans les noms.
     private val parser = CommandParser(
         listOf(
-            MenuEntry(1, "Samoussa", listOf("samosa")),
-            MenuEntry(2, "Bonbon piment"),
-            MenuEntry(3, "Pizza Margherita"),
-            MenuEntry(4, "Pizza Reine"),
-            MenuEntry(5, "Frites", listOf("portion de frites")),
-            MenuEntry(6, "Coca", listOf("coca cola")),
-            MenuEntry(7, "Jus de litchi"),
-            MenuEntry(8, "Cari poulet", listOf("carry poulet", "cari")),
+            MenuEntry(1, "Margherita"),
+            MenuEntry(2, "Reine"),
+            MenuEntry(3, "Napolitaine"),
+            MenuEntry(4, "Calzone"),
+            MenuEntry(5, "Végétarienne"),
+            MenuEntry(6, "Orientale"),
+            MenuEntry(7, "Chèvre miel"),
+            MenuEntry(8, "Savoyarde"),
         )
     )
 
-    @Test fun `plusieurs plats dans une phrase`() {
+    @Test fun `plusieurs pizzas dans une phrase`() {
         assertEquals(
-            listOf(Add(1, "Samoussa", 2), Add(6, "Coca", 1)),
-            parser.parse("Deux samoussas et un coca"),
+            listOf(Add(1, "Margherita", 2), Add(2, "Reine", 1)),
+            parser.parse("deux margherita et une reine"),
         )
     }
 
-    @Test fun `formule de politesse et verbe`() {
+    @Test fun `formule de politesse et mot pizza`() {
         assertEquals(
-            listOf(Add(3, "Pizza Margherita", 1)),
+            listOf(Add(1, "Margherita", 1)),
             parser.parse("Je voudrais une pizza margherita s'il vous plaît"),
         )
     }
 
     @Test fun `quantite en chiffres`() {
-        assertEquals(listOf(Add(7, "Jus de litchi", 2)), parser.parse("2 jus de litchi"))
+        assertEquals(listOf(Add(7, "Chèvre miel", 2)), parser.parse("2 chèvre miel"))
     }
 
     @Test fun `pluriel et accents`() {
-        assertEquals(listOf(Add(5, "Frites", 3)), parser.parse("trois frites"))
-        assertEquals(listOf(Add(2, "Bonbon piment", 3)), parser.parse("Trois bonbons piment"))
+        assertEquals(listOf(Add(2, "Reine", 3)), parser.parse("trois reines"))
+        assertEquals(listOf(Add(5, "Végétarienne", 1)), parser.parse("une vegetarienne"))
     }
 
     @Test fun `faute de reconnaissance tolérée`() {
-        assertEquals(listOf(Add(3, "Pizza Margherita", 1)), parser.parse("une pizza margarita"))
-        assertEquals(listOf(Add(1, "Samoussa", 1)), parser.parse("un samoussas"))
-    }
-
-    @Test fun `alias`() {
-        assertEquals(listOf(Add(8, "Cari poulet", 1)), parser.parse("un carry poulet"))
+        assertEquals(listOf(Add(1, "Margherita", 1)), parser.parse("une pizza margarita"))
+        assertEquals(listOf(Add(4, "Calzone", 1)), parser.parse("une calzone"))
     }
 
     @Test fun `mot partiel unique`() {
-        assertEquals(listOf(Add(3, "Pizza Margherita", 1)), parser.parse("une margherita"))
+        assertEquals(listOf(Add(7, "Chèvre miel", 1)), parser.parse("une chèvre"))
     }
 
-    @Test fun `mot partiel ambigu demande de preciser`() {
+    @Test fun `pizza seule demande de preciser`() {
         val result = parser.parse("une pizza")
-        assertEquals(listOf(Ambiguous("pizza", listOf("Pizza Margherita", "Pizza Reine"))), result)
+        assertEquals(1, result.size)
+        val ambiguous = result.first() as Ambiguous
+        assertEquals(8, ambiguous.options.size)
+        assertTrue("Margherita" in ambiguous.options)
     }
 
     @Test fun `retrait`() {
-        assertEquals(listOf(Remove(6, "Coca", null)), parser.parse("enlève le coca"))
-        assertEquals(listOf(Remove(1, "Samoussa", 1)), parser.parse("retire un samoussa"))
+        assertEquals(listOf(Remove(2, "Reine", null)), parser.parse("enlève la reine"))
+        assertEquals(listOf(Remove(1, "Margherita", 1)), parser.parse("retire une margherita"))
     }
 
     @Test fun `ajout puis retrait dans la meme phrase`() {
         assertEquals(
-            listOf(Add(5, "Frites", 1), Remove(6, "Coca", null)),
-            parser.parse("ajoute une frite et enlève le coca"),
+            listOf(Add(4, "Calzone", 1), Remove(2, "Reine", null)),
+            parser.parse("ajoute une calzone et enlève la reine"),
         )
     }
 
     @Test fun `validation`() {
         assertEquals(listOf(Confirm), parser.parse("valide la commande"))
-        assertEquals(listOf(Add(5, "Frites", 2), Confirm), parser.parse("deux frites c'est tout"))
+        assertEquals(listOf(Add(1, "Margherita", 2), Confirm), parser.parse("deux margherita c'est tout"))
     }
 
     @Test fun `annulation`() {
@@ -89,8 +89,8 @@ class CommandParserTest {
         assertEquals(listOf(CancelOrder), parser.parse("Annuler toute la commande"))
     }
 
-    @Test fun `annule un plat n est pas une annulation de commande`() {
-        assertEquals(listOf(Remove(6, "Coca", null)), parser.parse("annule le coca"))
+    @Test fun `annule une pizza n est pas une annulation de commande`() {
+        assertEquals(listOf(Remove(2, "Reine", null)), parser.parse("annule la reine"))
     }
 
     @Test fun `recapitulatif`() {
@@ -109,8 +109,25 @@ class CommandParserTest {
     }
 
     @Test fun `parseBest choisit l'hypothese la mieux comprise`() {
-        val result = parser.parseBest(listOf("un hippopotame", "un coca"))
-        assertEquals(listOf(Add(6, "Coca", 1)), result)
+        val result = parser.parseBest(listOf("un hippopotame", "une reine"))
+        assertEquals(listOf(Add(2, "Reine", 1)), result)
+    }
+
+    // ---- resolve : nom isolé envoyé par un appel d'outil Gemini ----
+
+    @Test fun `resolve trouve une pizza`() {
+        assertEquals(MenuMatch.Found(MenuEntry(1, "Margherita")), parser.resolve("margarita"))
+        assertEquals(MenuMatch.Found(MenuEntry(2, "Reine")), parser.resolve("la reine"))
+    }
+
+    @Test fun `resolve pizza inconnue`() {
+        assertEquals(MenuMatch.NotFound, parser.resolve("hawaïenne ananas"))
+        assertEquals(MenuMatch.NotFound, parser.resolve("   "))
+    }
+
+    @Test fun `resolve nom ambigu`() {
+        val ambiguous = parser.resolve("pizza") as MenuMatch.Ambiguous
+        assertEquals(8, ambiguous.names.size)
     }
 
     @Test fun `normalisation`() {

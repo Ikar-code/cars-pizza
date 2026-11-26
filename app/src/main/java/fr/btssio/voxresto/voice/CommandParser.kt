@@ -6,6 +6,13 @@ import java.util.Locale
 /** Vue minimale d'un plat pour le parseur (aucune dépendance Android : testable en JVM pur). */
 data class MenuEntry(val id: Long, val name: String, val aliases: List<String> = emptyList())
 
+/** Résultat du rapprochement d'un nom de plat isolé avec le menu (voir [CommandParser.resolve]). */
+sealed interface MenuMatch {
+    data class Found(val entry: MenuEntry) : MenuMatch
+    data class Ambiguous(val names: List<String>) : MenuMatch
+    data object NotFound : MenuMatch
+}
+
 sealed interface VoiceCommand {
     data class Add(val itemId: Long, val itemName: String, val quantity: Int) : VoiceCommand
     data class Remove(val itemId: Long, val itemName: String, val quantity: Int?) : VoiceCommand
@@ -17,7 +24,7 @@ sealed interface VoiceCommand {
 }
 
 /**
- * Transforme une phrase reconnue (« deux samoussas et un coca, c'est tout ») en commandes.
+ * Transforme une phrase reconnue (« deux margherita et une reine, c'est tout ») en commandes.
  *
  * Étapes : normalisation (minuscules, sans accents) → détection des ordres globaux
  * (valider, annuler, récapitulatif) → découpage en segments (« et », « puis ») →
@@ -81,6 +88,20 @@ class CommandParser(menu: List<MenuEntry>) {
     }
 
     /**
+     * Retrouve un plat à partir d'un nom isolé (« margarita », « la reine »...). Sert aux appels
+     * d'outils de Gemini : le modèle comprend la phrase, mais c'est le menu en base qui tranche.
+     */
+    fun resolve(raw: String): MenuMatch {
+        val tokens = contentTokens(raw)
+        if (tokens.isEmpty()) return MenuMatch.NotFound
+        return when (val found = findItem(tokens)) {
+            Match.None -> MenuMatch.NotFound
+            is Match.One -> MenuMatch.Found(found.entry)
+            is Match.Several -> MenuMatch.Ambiguous(found.names)
+        }
+    }
+
+    /**
      * Les moteurs vocaux renvoient plusieurs hypothèses. On garde la première qui est
      * la mieux comprise (le plus de commandes valides, le moins d'inconnues).
      */
@@ -100,12 +121,14 @@ class CommandParser(menu: List<MenuEntry>) {
     }
 
     private fun quality(commands: List<VoiceCommand>): Int =
-        commands.sumOf {
-            when (it) {
+        commands.sumOf { command ->
+            // Type explicite : sans lui, `sumOf` est ambigu entre Int et Long avec des littéraux.
+            val points: Int = when (command) {
                 is VoiceCommand.Unknown -> -3
                 is VoiceCommand.Ambiguous -> -1
                 else -> 2
             }
+            points
         }
 
     // ---- Rapprochement avec la carte ---------------------------------------------------------
@@ -117,6 +140,12 @@ class CommandParser(menu: List<MenuEntry>) {
     }
 
     private fun findItem(segment: List<String>): Match {
+        // « une pizza » toute seule, alors qu'aucune pizza du menu ne contient ce mot dans son nom
+        // (Margherita, Reine...) : on demande de préciser parmi tout le menu.
+        if (candidates.isNotEmpty() && segment.all { it == "pizza" } && candidates.none { "pizza" in it.tokens }) {
+            return Match.Several(candidates.map { it.entry.name }.distinct().sorted())
+        }
+
         // Meilleur score par plat (un plat a plusieurs libellés : nom + alias).
         val best = HashMap<Long, Pair<Double, Candidate>>()
         for (c in candidates) {
@@ -236,7 +265,7 @@ class CommandParser(menu: List<MenuEntry>) {
                 .replace(Regex("[^a-z0-9]+"), " ")
                 .trim()
 
-        /** Pluriel simplifié : « samoussas » → « samoussa », « gateaux » → « gateau ». */
+        /** Pluriel simplifié : « reines » → « reine », « gateaux » → « gateau ». */
         fun stem(token: String): String =
             if (token.length > 3 && (token.endsWith("s") || token.endsWith("x"))) token.dropLast(1) else token
     }
