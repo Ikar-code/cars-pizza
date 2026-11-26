@@ -62,10 +62,12 @@ et n'est jamais dans le code ni dans le dépôt.
 > l'application était diffusée plus largement, il faudrait passer par un petit serveur intermédiaire ou des
 > jetons éphémères pour ne pas exposer la clé.
 
-## Base de données (SQLite)
+## Base de données (Room / SQLite)
 
-Le schéma de [`docs/schema.sql`](docs/schema.sql) est exécuté **tel quel** à la création de la base
-(`app/src/main/assets/db/schema.sql`), suivi du menu de départ (`assets/db/seed.sql`, 8 pizzas modifiables).
+Le schéma de [`docs/schema.sql`](docs/schema.sql) est la référence : **une entité Room par table**
+(`data/Entities.kt`), mêmes colonnes, mêmes clés étrangères, mêmes index, avec leurs DAOs (`data/Daos.kt`).
+Au premier lancement, le menu de départ (`assets/db/seed.sql`, 8 pizzas modifiables) est inséré.
+Room exporte son schéma dans `app/schemas/` au premier build (utile pour le MLD du dossier).
 
 | Table | Rôle |
 |---|---|
@@ -78,16 +80,20 @@ Le schéma de [`docs/schema.sql`](docs/schema.sql) est exécuté **tel quel** à
 Points d'attention :
 
 - Prix en **centimes** (entiers) : aucune erreur d'arrondi.
-- Clés étrangères activées à l'ouverture (`setForeignKeyConstraintsEnabled`) : le `PRAGMA` du script est sans effet
-  dans la transaction de création, il est donc ignoré à l'exécution.
+- Room active les clés étrangères à l'ouverture (équivalent du `PRAGMA foreign_keys = ON` du script).
+- **Contraintes `CHECK`** (quantité > 0, statuts autorisés, prix ≥ 0…) : Room ne peut pas les générer depuis une
+  `@Entity`. Elles restent dans `docs/schema.sql` ; dans l'application elles sont appliquées par le code
+  (enum `TicketStatus`, formulaires du menu, `OrderRepository`).
+- Un ticket avec ses lignes et son historique se lit en une requête grâce à `@Relation` (`TicketWithRelations`).
 - Supprimer une pizza du menu met `ticket_item.pizza_id` à `NULL` sans toucher aux anciens tickets.
 
 ## Architecture
 
-- **MVVM** : écrans Compose → ViewModels → `OrderRepository` → `PizzeriaDatabase` (SQLite via `SQLiteOpenHelper`).
+- **MVVM** : écrans Compose → ViewModels → `OrderRepository` → DAOs → `PizzeriaDatabase` (Room / KSP).
 - `CommandParser` n'a aucune dépendance Android : testé en JVM pur (`CommandParserTest`, 20 tests).
-- Flux réactifs : les listes se relisent après chaque écriture.
-- Dépendances ajoutées : OkHttp (WebSocket). Room n'est plus utilisé : le schéma fourni est la référence.
+- Flux réactifs : les DAOs renvoient des `Flow`, les listes se mettent à jour toutes seules.
+- Transactions : `db.withTransaction { … }` (validation d'un ticket, changement d'état + historique).
+- Dépendance ajoutée : OkHttp (WebSocket Gemini Live).
 
 ## Lancer le projet
 

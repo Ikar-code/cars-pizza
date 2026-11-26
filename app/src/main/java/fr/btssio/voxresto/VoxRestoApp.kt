@@ -5,7 +5,7 @@ import fr.btssio.voxresto.data.OrderRepository
 import fr.btssio.voxresto.data.PizzeriaDatabase
 
 class VoxRestoApp : Application() {
-    val database: PizzeriaDatabase by lazy { PizzeriaDatabase(this) }
+    val database: PizzeriaDatabase by lazy { PizzeriaDatabase.create(this) }
     val repository: OrderRepository by lazy { OrderRepository(database) }
     val settings: AppSettings by lazy { AppSettings(this) }
 }
